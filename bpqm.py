@@ -1,6 +1,6 @@
-import numpy as np
-from qiskit.extensions.unitary import *
 
+import numpy as np
+from qiskit.circuit.library import UCRYGate
 """
 General remark: During the construction of the BPQM circuit, we have to keep
 track of the angle of each qubit. That angle is classically conditioned on
@@ -22,46 +22,63 @@ two qubits are given by angles1 and agles2.
 
 The output qubit index and the output qubit angle are returned.
 """
+
 def combine_variable(qc, idx1, angles1, idx2, angles2):
     idx_out = idx1
-    angles_out = list()
+    angles_out = []
 
-    control_qubits = list()
-    if len(angles1)>0: control_qubits += list(angles1[0][1].keys())
-    if len(angles2)>0: control_qubits += list(angles2[0][1].keys())
-    
-    angles_alpha = [None] * (2**len(control_qubits))
-    angles_beta = [None] * (2**len(control_qubits))
-    for t1,c1 in angles1:
-        for t2,c2 in angles2:
-            controls = {**c1, **c2} # merge dictionaries
+    # 1) Gather all control-qubit indices
+    control_qubits = []
+    if angles1:
+        control_qubits += list(angles1[0][1].keys())
+    if angles2:
+        control_qubits += list(angles2[0][1].keys())
+    control_qubits = list(dict.fromkeys(control_qubits))  # unique & preserve order
+
+    # 2) Prepare lookup arrays
+    n_ctrl = len(control_qubits)
+    angles_alpha = [None] * (2**n_ctrl)
+    angles_beta  = [None] * (2**n_ctrl)
+
+    # 3) Compute α/β for each conditioning
+    for t1, c1 in angles1:
+        for t2, c2 in angles2:
+            controls = {**c1, **c2}
             angles_out.append((np.arccos(np.cos(t1)*np.cos(t2)), controls))
 
-            # get index of location of angles list in which we have to store the angle
-            if len(control_qubits)==0: idx = 0
-            else:
-                controls_sorted = [controls[i] for i in control_qubits]
-                idx = int("".join([str(x) for x in controls_sorted]), 2)
+            # index into the multiplex array
+            idx_bin = 0
+            for bit in control_qubits:
+                idx_bin = (idx_bin << 1) | controls.get(bit, 0)
 
-            a_min = (np.cos(0.5*(t1-t2)) - np.cos(0.5*(t1+t2)) ) / (np.sqrt(2.)*np.sqrt(1. + np.cos(t1)*np.cos(t2)))
-            b_min = (np.sin(0.5*(t1+t2)) + np.sin(0.5*(t1-t2)) ) / (np.sqrt(2.)*np.sqrt(1. - np.cos(t1)*np.cos(t2)))
+            a_min = (
+                np.cos(0.5*(t1-t2)) - np.cos(0.5*(t1+t2))
+            ) / (np.sqrt(2)*np.sqrt(1 + np.cos(t1)*np.cos(t2)))
+            b_min = (
+                np.sin(0.5*(t1+t2)) + np.sin(0.5*(t1-t2))
+            ) / (np.sqrt(2)*np.sqrt(1 - np.cos(t1)*np.cos(t2)))
             alpha = np.arccos(-a_min) + np.arccos(-b_min)
             beta  = np.arccos(-a_min) - np.arccos(-b_min)
-            angles_alpha[idx] = alpha
-            angles_beta[idx] = beta
 
-    # apply variable node unitary
+            angles_alpha[idx_bin] = alpha
+            angles_beta[idx_bin]  = beta
+
+    # 4) Variable-node gadget
     qc.cx(idx2, idx1)
     qc.x(idx1)
     qc.cx(idx1, idx2)
     qc.x(idx1)
-    control_qubits = list(reversed(control_qubits)) # qiskit uses the inverse qubit ordering that we do
-    qc.ucry(angles_alpha, control_qubits, idx2)
+
+    # 5) Reverse controls to match old ucry ordering
+    reversed_ctrls = list(reversed(control_qubits))
+    # 6) Append the uniformly-controlled Ry’s
+    qc.append(UCRYGate(angles_alpha), [idx2] + reversed_ctrls)
     qc.cx(idx1, idx2)
-    qc.ucry(angles_beta, control_qubits, idx2)
+    qc.append(UCRYGate(angles_beta),  [idx2] + reversed_ctrls)
     qc.cx(idx1, idx2)
 
     return idx_out, angles_out
+
 
 """
 Same as combine_variable, but for check node operation.
