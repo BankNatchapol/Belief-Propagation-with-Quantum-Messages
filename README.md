@@ -3,7 +3,7 @@
 This repository re-implements the BPQM algorithm from the paper
 **“Quantum message-passing algorithm for optimal and efficient decoding”**
 by Christophe Piveteau and Joe Renes ([arXiv:2109.08170](https://arxiv.org/abs/2109.08170)).
-It is a fork of the original code at [https://github.com/ChriPiv/quantum-message-passing-paper](https://github.com/ChriPiv/quantum-message-passing-paper), updated for modern Python and Qiskit versions.
+Forked from https://github.com/ChriPiv/quantum-message-passing-paper and updated for modern Python—and whichever Qiskit version is currently not obsolete (it seems to break its API by the hour).
 
 ## Setup
 
