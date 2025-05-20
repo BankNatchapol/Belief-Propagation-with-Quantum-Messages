@@ -31,7 +31,7 @@ Forked from https://github.com/ChriPiv/quantum-message-passing-paper and updated
 import numpy as np
 import networkx as nx
 from matplotlib import pyplot as plt
-from decoders import LinearCode, VarNodeCloner, decode_bpqm
+from decoders import LinearCode, VarNodeCloner, decode_bpqm, decode_syndrome_bpqm
 
 # Define an 8-bit code (see Section 6 of the paper)
 G = np.array([
@@ -82,13 +82,27 @@ p_codeword = decode_bpqm(
     debug=False
 )
 print("Success probability for the full codeword:", p_codeword)
+
+# Decode an error pattern from a syndrome vector
+syndrome = np.array([0, 1, 0, 1])
+p_syndrome = decode_syndrome_bpqm(
+    H,
+    syndrome,
+    theta,
+    cloner=cloner,
+    height=2,
+    mode='codeword',
+    order=[0, 1, 2, 3],
+    debug=False,
+)
+print("Success probability for the given syndrome:", p_syndrome)
 ```
 
 ## Documentation
 
 * **`decoders.py`**
 
-  * Implements `decode_bpqm` and related helper functions.
+  * Implements `decode_bpqm`, `decode_syndrome_bpqm` and related helper functions.
   * Set `debug=True` to print or visualize intermediate circuits and computational graphs.
 
 * **`cloner.py`**
