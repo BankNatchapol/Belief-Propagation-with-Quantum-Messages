@@ -1,14 +1,10 @@
 import numpy as np
-import matplotlib.pyplot as plt
-import networkx as nx
-from typing import List, Optional, Sequence
-
+from numpy.typing import NDArray
+from typing import List, Optional, Sequence, Union
 from qiskit import QuantumCircuit, transpile
 from qiskit_aer import AerSimulator
-from qiskit_aer.library import save_probabilities_dict
 
 import cvxpy as cp
-import time
 
 from bpqm import *
 from cloner import *
@@ -92,16 +88,15 @@ def decode_bpqm(code, theta, cloner, height, mode, bit=None, order=None,
 
     return prob
 
-
 def decode_single_codeword(
     code: LinearCode,
     theta: float,
     cloner: Cloner,
     height: int,
-    codeword: Sequence[int],
+    codeword: Union[Sequence[int], NDArray[np.int_]],
     order: Optional[Sequence[int]] = None,
     shots: int = 512,
-) -> List[int]:
+) -> NDArray[np.int_]:
     """Decode the provided ``codeword`` using BPQM.
 
     Parameters
@@ -115,7 +110,7 @@ def decode_single_codeword(
     height:
         Unrolling depth of the BPQM tree.
     codeword:
-        List of ``0``/``1`` describing the transmitted codeword.
+        List or array of ``0``/``1`` describing the transmitted codeword.
     order:
         Optional list of bit indices to decode. Defaults to ``range(code.k)``.
     shots:
@@ -123,12 +118,12 @@ def decode_single_codeword(
 
     Returns
     -------
-    list[int]
-        The decoded bitstring in the order specified by ``order``.
+    np.ndarray
+        The decoded bitstring in the order specified by ``order`` as a NumPy array of ints.
     """
 
     if order is None:
-        order = list(range(code.k))
+        order = list(range(code.n))
 
     cgraphs = [code.get_computation_graph(f"x{b}", height) for b in order]
 
@@ -193,10 +188,8 @@ def decode_single_codeword(
     result = job.result().get_counts()
 
     most_likely = max(result.items(), key=lambda kv: kv[1])[0]
-    decoded = list(map(int, most_likely[::-1]))
-    return decoded
-
-
+    decoded = [int(bit) for bit in most_likely[::-1]]
+    return np.array(decoded, dtype=int)
 
 def decode_bit_optimal_quantum(code, theta, index):
     rho0 = np.zeros((2**code.n, 2**code.n), complex)

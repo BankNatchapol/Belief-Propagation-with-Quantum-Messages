@@ -1,98 +1,306 @@
+import re
 import numpy as np
 import networkx as nx
-from typing import Optional
+from typing import Optional, Tuple, Dict, List
+from numpy.typing import NDArray
+
+__all__ = ["LinearCode"]
+
+# Patterns for labeling
+_LABEL_PATTERN = re.compile(r"^([a-zA-Z]+)(\d+)$")
+_SUBSCRIPT_MAP = str.maketrans("0123456789", "₀₁₂₃₄₅₆₇₈₉")
 
 
-class LinearCode(object):
+def _latex_label(name: str) -> str:
+    """
+    Convert a node name (e.g., 'x0') into a LaTeX-formatted label (e.g., '$x_{0}$').
+    """
+    match = _LABEL_PATTERN.match(name)
+    if not match:
+        return name
+    var, idx = match.groups()
+    return rf"${var}_{{{idx}}}$"
 
-    def __init__(self, G: Optional[np.ndarray], H: np.ndarray):
-        """Create a linear code.
 
-        Parameters
-        ----------
-        G:
-            Generator matrix of shape ``(k, n)``.  May be ``None`` when only the
-            parity check matrix is required.
-        H:
-            Parity check matrix of shape ``(n-k, n)``.
-        """
-        self.H = np.array(H)
+def _unicode_label(name: str) -> str:
+    """
+    Convert a node name (e.g., 'x0') into a unicode-subscript label (e.g., 'x₀').
+    This is used for backends that do not support LaTeX rendering.
+    """
+    match = _LABEL_PATTERN.match(name)
+    if not match:
+        return name
+    var, idx = match.groups()
+    return var + idx.translate(_SUBSCRIPT_MAP)
+
+
+class LinearCode:
+    """
+    Binary linear block code with enumeration, factor-graph construction,
+    Matplotlib and PyVis visualizations, and BPQM unfolding.
+
+    Parameters
+    ----------
+    G : Optional[NDArray]
+        Generator matrix of shape (k, n). If None, will infer k from H.
+    H : NDArray
+        Parity-check matrix of shape (n - k, n).
+    """
+
+    def __init__(self, G: Optional[NDArray], H: NDArray):
+        self.H = np.asarray(H, dtype=int)
         self.n = self.H.shape[1]
-
         if G is not None:
-            self.G = np.array(G)
+            self.G = np.asarray(G, dtype=int)
+            if self.G.shape[1] != self.n:
+                raise ValueError("Generator matrix column count must match H")
             self.k = self.G.shape[0]
-            assert self.G.shape[1] == self.n
         else:
             self.G = None
             self.k = self.n - self.H.shape[0]
 
-    def get_codewords(self):
-        """Enumerate all codewords.
+    def get_codewords(self) -> List[NDArray]:
+        """
+        Enumerate all codewords by recursively combining rows of G.
 
         Returns
         -------
-        list
-            List of :class:`numpy.ndarray` objects representing the codewords.
+        List[NDArray]
+            List of length 2^k, each entry is a codeword of length n.
+
+        Raises
+        ------
+        ValueError
+            If G was not provided at initialization.
         """
         if self.G is None:
-            raise ValueError("Generator matrix required to list codewords")
+            raise ValueError("Generator matrix required to enumerate codewords")
 
-        def add_cw(i):
+        def _recurse(i: int) -> List[NDArray]:
             if i == self.k - 1:
-                return [np.zeros(self.n), self.G[i]]
-            ret = add_cw(i + 1)
-            return ret + [(self.G[i] + c) % 2 for c in ret]
+                return [np.zeros(self.n, dtype=int), self.G[i]]
+            prev = _recurse(i + 1)
+            return prev + [(self.G[i] + cw) % 2 for cw in prev]
 
-        return add_cw(0)
+        return _recurse(0)
 
-    def get_factor_graph(self):
-        G = nx.Graph()
+    def get_factor_graph(self) -> nx.Graph:
+        """
+        Build the bipartite factor graph: variable nodes x_i,
+        check nodes c_j, and output nodes y_i.
+
+        Returns
+        -------
+        nx.Graph
+            Undirected factor graph with node attribute 'type'.
+        """
+        graph = nx.Graph()
+        # Add variable and output nodes
         for i in range(self.n):
-            G.add_node("x"+str(i), type="variable")
-            G.add_node("y"+str(i), type="output")
-            G.add_edge("x"+str(i), "y"+str(i))
-        for i in range(self.n-self.k):
-            G.add_node("c"+str(i), type="check")
-            for j in range(self.n):
-                if self.H[i,j] > 0.5:
-                    G.add_edge("c"+str(i), "x"+str(j))
-        return G
+            graph.add_node(f"x{i}", type="variable")
+            graph.add_node(f"y{i}", type="output")
+            graph.add_edge(f"x{i}", f"y{i}")
+        # Add check nodes
+        for j in range(self.H.shape[0]):
+            graph.add_node(f"c{j}", type="check")
+            for i in range(self.n):
+                if self.H[j, i] != 0:
+                    graph.add_edge(f"c{j}", f"x{i}")
+        return graph
 
-    def get_computation_graph(self, root, height, cloner=None):
+    def plot_factor_graph(
+        self,
+        backend: str = "matplotlib",
+        latex_subscripts: bool = True,
+        **kwargs
+    ) -> None:
+        """
+        Render the factor graph using Matplotlib or PyVis.
+
+        Parameters
+        ----------
+        backend : str
+            'matplotlib' for static plots or 'pyvis' for interactive HTML.
+        latex_subscripts : bool
+            If True, use LaTeX labels in Matplotlib and unicode subscripts in PyVis
+            (PyVis cannot render LaTeX directly).
+        **kwargs
+            Additional backend-specific parameters.
+        """
+        if backend == "matplotlib":
+            self._plot_matplotlib(latex_subscripts=latex_subscripts, **kwargs)
+        elif backend == "pyvis":
+            self._plot_pyvis(latex_subscripts=latex_subscripts, **kwargs)
+        else:
+            raise ValueError("backend must be 'matplotlib' or 'pyvis'")
+
+    def _plot_matplotlib(
+        self,
+        layout: str = "kamada_kawai",
+        figsize: Tuple[int, int] = (6, 6),
+        variable_color: str = "skyblue",
+        check_color: str = "salmon",
+        output_color: str = "lightgray",
+        variable_size: int = 600,
+        check_size: Optional[int] = None,
+        output_size: Optional[int] = None,
+        latex_subscripts: bool = True,
+        title: Optional[str] = None,
+        font_size: int = 12,
+    ) -> None:
+        """
+        Internal method to draw factor graph with Matplotlib.
+        """
+        import matplotlib.pyplot as plt
+        import matplotlib as mpl
+
+        graph = self.get_factor_graph()
+        pos_fn = {
+            "kamada_kawai": nx.kamada_kawai_layout,
+            "spring": nx.spring_layout,
+            "circular": nx.circular_layout,
+        }.get(layout, nx.spring_layout)
+        pos = pos_fn(graph)
+
+        # Prepare node groups
+        vars_ = [n for n, d in graph.nodes(data=True) if d["type"] == "variable"]
+        checks = [n for n, d in graph.nodes(data=True) if d["type"] == "check"]
+        outs = [n for n, d in graph.nodes(data=True) if d["type"] == "output"]
+
+        # Disable LaTeX engine in Matplotlib
+        mpl.rcParams["text.usetex"] = False
+
+        fig, ax = plt.subplots(figsize=figsize)
+        # Draw nodes and edges
+        nx.draw_networkx_nodes(graph, pos, vars_, node_color=variable_color,
+                               node_shape="o", node_size=variable_size, ax=ax)
+        nx.draw_networkx_nodes(graph, pos, checks, node_color=check_color,
+                               node_shape="s", node_size=check_size or int(variable_size*1.2), ax=ax)
+        nx.draw_networkx_nodes(graph, pos, outs, node_color=output_color,
+                               node_shape="o", node_size=output_size or int(variable_size*0.8), ax=ax)
+        nx.draw_networkx_edges(graph, pos, ax=ax)
+
+        # Labels
+        labels = {
+            node: (_latex_label(node) if latex_subscripts else node)
+            for node in graph.nodes()
+        }
+        nx.draw_networkx_labels(graph, pos, labels, font_size=font_size, ax=ax)
+
+        if title:
+            ax.set_title(title)
+        ax.axis("off")
+        plt.tight_layout()
+        plt.show()
+
+    def _plot_pyvis(
+        self,
+        html_file: str = "factor_graph.html",
+        width: str = "900px",
+        height: str = "700px",
+        cdn_resources: str = "remote",
+        variable_color: str = "skyblue",
+        check_color: str = "salmon",
+        output_color: str = "lightgray",
+        variable_size: int = 600,
+        check_size: Optional[int] = None,
+        output_size: Optional[int] = None,
+        font_size: int = 12,
+        latex_subscripts: bool = True,
+    ) -> None:
+        """
+        Internal method to draw factor graph with PyVis.
+
+        Note
+        ----
+        PyVis cannot render LaTeX, so unicode_subscript labels are used when
+        `latex_subscripts=True`.
+        """
+        try:
+            from pyvis.network import Network
+        except ImportError as exc:
+            raise ImportError("Install pyvis to use this backend: pip install pyvis") from exc
+
+        graph = self.get_factor_graph()
+        net = Network(width=width, height=height, cdn_resources=cdn_resources)
+        net.from_nx(graph)
+
+        # Compute positions once
+        pos = nx.kamada_kawai_layout(graph)
+        scale = 2000
+        for node, (x, y) in pos.items():
+            net.get_node(node).update({"x": x*scale, "y": y*scale, "physics": True})
+
+        # Update styling and labels
+        for node, data in graph.nodes(data=True):
+            node_data = net.get_node(node)
+            color, size = {
+                "variable": (variable_color, variable_size),
+                "check": (check_color, check_size or int(variable_size*1.2)),
+                "output": (output_color, output_size or int(variable_size*0.8)),
+            }[data["type"]]
+            node_data.update({
+                "color": color,
+                "shape": "square" if data["type"] == "check" else "dot",
+                "size": size / 10,
+                "font": {"size": font_size},
+                "label": (_unicode_label(node) if latex_subscripts else node),
+            })
+
+        net.save_graph(html_file)
+
+    def get_computation_graph(
+        self,
+        root: str,
+        height: int,
+        cloner: Optional[object] = None
+    ) -> Tuple[nx.DiGraph, Dict[str, int], str]:
+        """
+        Unroll the factor graph around a root variable for message-passing.
+
+        Args:
+            root (str): Name of the variable node to serve as root (e.g., 'x0').
+            height (int): Number of layers to expand (depth).
+            cloner (Optional): Reserved for future cloning logic.
+
+        Returns:
+            DiGraph: Directed computation graph.
+            Dict[str,int]: Occurrence count of each variable in the unrolled graph.
+            str: New root node name in the unrolled graph.
+        """
         fg = self.get_factor_graph()
-        varnodes = [n for n in fg.nodes() if fg.nodes[n]["type"]=="variable"]
-        G = nx.DiGraph()
-        # keep track how many times each variable has been added in our digraph
-        occurances = {v:0 for v in varnodes}
-        # keep track how many check nodes we have added in our digraph
-        num_check_nodes = 0
+        directed = nx.DiGraph()
+        occurrences = {v: 0 for v in fg.nodes if fg.nodes[v]["type"] == "variable"}
+        check_counter = 0
+        max_depth = 2 * height + 1
 
-        max_depth = 2*height + 1
-        def handle_node(node, prev, depth):
-            nonlocal num_check_nodes
-            if depth == max_depth: return None
-            if fg.nodes[node]["type"] == "output": return None
-            elif fg.nodes[node]["type"] == "variable":
-                node_new = node+"_"+str(occurances[node])
-                G.add_node(node_new, type="variable")
-                occurances[node] += 1
-            elif fg.nodes[node]["type"] == "check":
-                node_new = "c"+str(num_check_nodes)
-                G.add_node(node_new, type="check")
-                num_check_nodes += 1
-            
-            descendants = [x for x in list(fg.neighbors(node)) if x != prev]
-            for d in descendants:
-                d_new = handle_node(d, node, depth+1)
-                if d_new is not None: G.add_edge(node_new, d_new)
+        def _expand(node: str, parent: Optional[str], depth: int) -> Optional[str]:
+            nonlocal check_counter
+            if depth >= max_depth or fg.nodes[node]["type"] == "output":
+                return None
 
-            if fg.nodes[node]["type"] == "variable":
-                onode = node_new.replace("x", "y")
-                G.add_node(onode, type="output")
-                G.add_edge(node_new, onode)
-            return node_new
-    
-        new_root = handle_node(root, None, 0)
-        return G, occurances, new_root
+            ntype = fg.nodes[node]["type"]
+            if ntype == "variable":
+                label = f"{node}_{occurrences[node]}"
+                occurrences[node] += 1
+            else:
+                label = f"c{check_counter}"
+                check_counter += 1
 
+            directed.add_node(label, type=ntype)
+            for neighbor in fg.neighbors(node):
+                if neighbor == parent:
+                    continue
+                child = _expand(neighbor, node, depth + 1)
+                if child:
+                    directed.add_edge(label, child)
+
+            if ntype == "variable":
+                out_label = label.replace("x", "y")
+                directed.add_node(out_label, type="output")
+                directed.add_edge(label, out_label)
+
+            return label
+
+        new_root = _expand(root, None, 0)
+        return directed, occurrences, new_root
