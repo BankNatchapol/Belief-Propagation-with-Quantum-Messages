@@ -1,9 +1,7 @@
 # Belief Propagation with Quantum Messages (BPQM)
 
-This repository re-implements the BPQM algorithm from the paper
-**“Quantum message-passing algorithm for optimal and efficient decoding”**
-by Christophe Piveteau and Joe Renes ([arXiv:2109.08170](https://arxiv.org/abs/2109.08170)).
-Forked from https://github.com/ChriPiv/quantum-message-passing-paper and updated for modern Python—and whichever Qiskit version is currently not obsolete (it seems to break its API by the hour).
+This repository re-implements the BPQM algorithm from the paper **“Quantum message-passing algorithm for optimal and efficient decoding”** by Christophe Piveteau and Joe Renes ([arXiv:2109.08170](https://arxiv.org/abs/2109.08170)).
+Forked from [https://github.com/ChriPiv/quantum-message-passing-paper](https://github.com/ChriPiv/quantum-message-passing-paper) and updated for modern Python—and whichever Qiskit version is currently not obsolete (it seems to break its API by the hour).
 
 ## Setup
 
@@ -11,19 +9,9 @@ Forked from https://github.com/ChriPiv/quantum-message-passing-paper and updated
 2. Install dependencies:
 
    ```bash
+   pip install numpy==2.2.5 scipy==1.15.3
    pip install -r requirements.txt
    ```
-
-## Overview
-
-* Each subdirectory corresponds to one of the paper’s figures.
-
-  * `gen_data.py` — generates the data
-  * `plot_data.py` — creates the plot using Matplotlib
-
-* In the main directory, you’ll find code to construct BPQM decoding circuits for any binary linear code.
-
-  * We use Qiskit to build and simulate quantum circuits.
 
 ## Example Usage
 
@@ -31,7 +19,7 @@ Forked from https://github.com/ChriPiv/quantum-message-passing-paper and updated
 import numpy as np
 import networkx as nx
 from matplotlib import pyplot as plt
-from decoders import LinearCode, VarNodeCloner, decode_bpqm
+from decoders import LinearCode, VarNodeCloner, decode_bpqm, decode_single_codeword
 
 # Define an 8-bit code (see Section 6 of the paper)
 G = np.array([
@@ -82,6 +70,16 @@ p_codeword = decode_bpqm(
     debug=False
 )
 print("Success probability for the full codeword:", p_codeword)
+
+# Decode a specific codeword and obtain the measurement outcome
+decoded = decode_single_codeword(
+    code,
+    theta,
+    cloner=cloner,
+    height=2,
+    codeword=[0]*code.n,
+)
+print("Decoded bits:", decoded)
 ```
 
 ## Documentation
@@ -95,3 +93,9 @@ print("Success probability for the full codeword:", p_codeword)
 
   * Defines approximate cloners for variable nodes in loopy graphs.
   * `VarNodeCloner` corresponds to the ENU cloner described in the paper.
+
+* **`linearcode.py`**
+
+  * Provides the `LinearCode` class for enumerating codewords and building factor graphs.
+
+* **New:** Added `decode_single_codeword` function in `decoders.py` to directly decode an arbitrary codeword and return its measurement outcomes.

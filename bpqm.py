@@ -1,29 +1,28 @@
+"""Utilities for building BPQM circuits."""
+
+from typing import Dict, List, Tuple
+
+import networkx as nx
 
 import numpy as np
+from qiskit import QuantumCircuit
 from qiskit.circuit.library import UCRYGate
-"""
-General remark: During the construction of the BPQM circuit, we have to keep
-track of the angle of each qubit. That angle is classically conditioned on
-certain other qubits, which happen to be in a classical state.
 
-The angles are stored as list of tuples [(t1,c1), (t2,c2), ...] where ti
-is the float value of the angle anc ci is the 'classical conditioning' for
-that angle. For example, let's consider an angle that is 0.1 if qubit 0 has
-value 0 and 0.2 if qubit 0 has value 1. That would be stored as
-[(0.1, {0:0}), (0.2, {0:1})]
-In general ci is a dictionary that contains key-value pairs where the key
-is a qubit-index and the value is the value on which this qubit is conditioned.
-"""
+#
+# During the construction of the BPQM circuit we keep track of angles for each
+# qubit. Each angle is a list of ``(theta, controls)`` tuples where ``controls``
+# maps qubit indices to classical values on which the angle is conditioned.
+# This allows efficient generation of uniformly controlled rotations.
+#
 
-"""
-Extends the qiskit.QuantumCircuit object qc by performing variable node
-operation on the two qubits with indices idx1 and idx2. The angles of these
-two qubits are given by angles1 and agles2.
-
-The output qubit index and the output qubit angle are returned.
-"""
-
-def combine_variable(qc, idx1, angles1, idx2, angles2):
+def combine_variable(
+    qc: QuantumCircuit,
+    idx1: int,
+    angles1: List[Tuple[float, Dict[int, int]]],
+    idx2: int,
+    angles2: List[Tuple[float, Dict[int, int]]],
+) -> Tuple[int, List[Tuple[float, Dict[int, int]]]]:
+    """Combine two variable nodes and return the output qubit and angles."""
     idx_out = idx1
     angles_out = []
 
@@ -83,7 +82,14 @@ def combine_variable(qc, idx1, angles1, idx2, angles2):
 """
 Same as combine_variable, but for check node operation.
 """
-def combine_check(qc, idx1, angles1, idx2, angles2):
+def combine_check(
+    qc: QuantumCircuit,
+    idx1: int,
+    angles1: List[Tuple[float, Dict[int, int]]],
+    idx2: int,
+    angles2: List[Tuple[float, Dict[int, int]]],
+) -> Tuple[int, List[Tuple[float, Dict[int, int]]]]:
+    """Combine two check nodes analogous to :func:`combine_variable`."""
     idx_out = idx1
     angles_out = list()
 
@@ -119,7 +125,12 @@ Returns:
 * Index of final qubit in circuit (onto which you want to perform the Helstrom measurement)
 * Angles of output qubit (under the assumption that input of circuit respects the factor graph 'tree')
 """
-def tree_bpqm(tree, qc, root):
+def tree_bpqm(
+    tree: nx.DiGraph,
+    qc: QuantumCircuit,
+    root: str,
+) -> Tuple[int, List[Tuple[float, Dict[int, int]]]]:
+    """Recursively build the BPQM circuit for ``tree`` rooted at ``root``."""
     succs = list(tree.successors(root))
     num_succ = len(succs)
 

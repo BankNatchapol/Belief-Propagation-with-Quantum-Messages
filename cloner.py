@@ -1,28 +1,39 @@
+"""Cloning utilities used by the BPQM decoders."""
+
+from typing import Dict, List, Tuple
+
 import numpy as np
 import networkx as nx
 from qiskit import QuantumCircuit
 
-"""Only objects derived from `Cloner` should be directly intantiated"""
-class Cloner(object):
-    """marks the angles into the leaves of the factor graph graph"""
-    def mark_angles(self, graph, occurances):
-        raise NotImplemented
 
-    def get_init_circ(self, graph, occurances, n_circ_qubits):
-        raise NotImplemented
+class Cloner:
+    """Base class for all cloner implementations."""
+
+    def mark_angles(self, graph: nx.Graph, occurances: Dict[str, int]) -> None:
+        """Annotate ``graph`` with angles for cloning."""
+        raise NotImplementedError
+
+    def generate_cloner_circuit(
+        self, graph: nx.Graph, occurances: Dict[str, int], qubit_mapping: Dict[str, int], n_qubits: int,
+    ) -> QuantumCircuit:
+        """Return the circuit preparing the initial state."""
+        raise NotImplementedError
 
 class VarNodeCloner(Cloner):
-    def __init__(self, theta):
+    """Simple cloner treating all outputs symmetrically."""
+
+    def __init__(self, theta: float) -> None:
         self.theta = theta
 
-    def mark_angles(self, graph, occurances):
+    def mark_angles(self, graph: nx.Graph, occurances: Dict[str, int]) -> None:
         leaves = [n for n in graph.nodes() if graph.nodes[n]["type"]=="output"]
         for l in leaves:
             n = occurances[l.split("_")[0].replace("y","x")]
             t = np.arccos(np.cos(self.theta)**(1./n))
             graph.nodes[l]["angle"] = [(t,{})]
 
-    def cloner_unitary(self, t1, t2):
+    def cloner_unitary(self, t1: float, t2: float) -> np.ndarray:
         aplus = (1./np.sqrt(2.)) * (np.cos(0.5*(t1-t2)) + np.cos(0.5*(t1+t2))) \
                      / np.sqrt(1. + np.cos(t1)*np.cos(t2))
         amin  = (1./np.sqrt(2.)) * (np.cos(0.5*(t1-t2)) - np.cos(0.5*(t1+t2))) \
@@ -38,7 +49,13 @@ class VarNodeCloner(Cloner):
             [0.,    bmin,  -bplus, 0.     ]
         ]).T
 
-    def generate_cloner_circuit(self, graph, occurances, qubit_mapping, n_qubits):
+    def generate_cloner_circuit(
+        self,
+        graph: nx.Graph,
+        occurances: Dict[str, int],
+        qubit_mapping: Dict[str, int],
+        n_qubits: int,
+    ) -> QuantumCircuit:
         n = len(occurances)
         qc = QuantumCircuit(n_qubits)
         for i in range(n):
@@ -55,11 +72,13 @@ class VarNodeCloner(Cloner):
         return qc
 
 class OptimalCloner(Cloner):
-    def __init__(self, theta, theta_marked):
+    """Cloner optimized for two copies."""
+
+    def __init__(self, theta: float, theta_marked: float) -> None:
         self.theta = theta
         self.theta_marked = theta_marked
 
-    def mark_angles(self, graph, occurances):
+    def mark_angles(self, graph: nx.Graph, occurances: Dict[str, int]) -> None:
         leaves = [n for n in graph.nodes() if graph.nodes[n]["type"]=="output"]
         for l in leaves:
             n = occurances[l.split("_")[0].replace("y","x")]
@@ -67,7 +86,7 @@ class OptimalCloner(Cloner):
             elif n == 2: graph.nodes[l]["angle"] = [(self.theta_marked,{})]
             else: raise Exception("cloning a qubit to >2 output qubits not yet implemented")
 
-    def cloner_unitary(self):
+    def cloner_unitary(self) -> np.ndarray:
         # https://arxiv.org/pdf/quant-ph/9705038.pdf
         theta_paper = np.pi / 4. - 0.5*self.theta
         P = 0.5 * np.sqrt(1. + np.sin(2*theta_paper)) / np.sqrt(1 + np.sin(2*theta_paper)**2)
@@ -106,7 +125,13 @@ class OptimalCloner(Cloner):
 
         return np.kron(Ry(-np.pi/2.), Ry(-np.pi/2.)) @ U @ np.kron(Ry(np.pi/2.), np.eye(2))
 
-    def generate_cloner_circuit(self, graph, occurances, qubit_mapping, n_qubits):
+    def generate_cloner_circuit(
+        self,
+        graph: nx.Graph,
+        occurances: Dict[str, int],
+        qubit_mapping: Dict[str, int],
+        n_qubits: int,
+    ) -> QuantumCircuit:
         n = len(occurances)
         qc = QuantumCircuit(n_qubits)
         for i in range(n):
@@ -118,20 +143,16 @@ class OptimalCloner(Cloner):
 
 
 
-"""
-Currently only supports maximally two clones!
-Determines the clone to be favored by looking at distance to root.
-frac: fraction (in [0,1]) of node that is closer to root
-root: integer
-"""
 class AsymmetricVarNodeCloner(Cloner):
-    def __init__(self, theta, frac, root):
+    """Cloner favoring one copy depending on the distance to ``root``."""
+
+    def __init__(self, theta: float, frac: float, root: int) -> None:
         self.theta = theta
-        assert 0.<=frac and frac<=1.
+        assert 0.0 <= frac <= 1.0
         self.frac = frac
         self.root = root
 
-    def mark_angles(self, graph, occurances):
+    def mark_angles(self, graph: nx.Graph, occurances: Dict[str, int]) -> None:
         leaves = [n for n in graph.nodes() if graph.nodes[n]["type"]=="output"]
         distances = dict(nx.all_pairs_shortest_path_length(graph))
         for l in leaves:
@@ -153,7 +174,7 @@ class AsymmetricVarNodeCloner(Cloner):
             else: raise
             graph.nodes[l]["angle"] = [(t,{})]
 
-    def cloner_unitary(self, t1, t2):
+    def cloner_unitary(self, t1: float, t2: float) -> np.ndarray:
         aplus = (1./np.sqrt(2.)) * (np.cos(0.5*(t1-t2)) + np.cos(0.5*(t1+t2))) \
                      / np.sqrt(1. + np.cos(t1)*np.cos(t2))
         amin  = (1./np.sqrt(2.)) * (np.cos(0.5*(t1-t2)) - np.cos(0.5*(t1+t2))) \
@@ -169,7 +190,13 @@ class AsymmetricVarNodeCloner(Cloner):
             [0.,    bmin,  -bplus, 0.     ]
         ]).T
 
-    def generate_cloner_circuit(self, graph, occurances, qubit_mapping, n_qubits):
+    def generate_cloner_circuit(
+        self,
+        graph: nx.Graph,
+        occurances: Dict[str, int],
+        qubit_mapping: Dict[str, int],
+        n_qubits: int,
+    ) -> QuantumCircuit:
         n = len(occurances)
         qc = QuantumCircuit(n_qubits)
         for i in range(n):
