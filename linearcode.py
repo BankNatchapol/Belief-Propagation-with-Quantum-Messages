@@ -1,18 +1,49 @@
 import numpy as np
 import networkx as nx
+from typing import Optional
+
+
 class LinearCode(object):
 
-    def __init__(self, G, H):
-        self.G = np.array(G)
+    def __init__(self, G: Optional[np.ndarray], H: np.ndarray):
+        """Create a linear code.
+
+        Parameters
+        ----------
+        G:
+            Generator matrix of shape ``(k, n)``.  May be ``None`` when only the
+            parity check matrix is required.
+        H:
+            Parity check matrix of shape ``(n-k, n)``.
+        """
         self.H = np.array(H)
-        self.n = G.shape[1]
-        self.k = G.shape[0]
+        self.n = self.H.shape[1]
+
+        if G is not None:
+            self.G = np.array(G)
+            self.k = self.G.shape[0]
+            assert self.G.shape[1] == self.n
+        else:
+            self.G = None
+            self.k = self.n - self.H.shape[0]
 
     def get_codewords(self):
+        """Enumerate all codewords.
+
+        Returns
+        -------
+        list
+            List of :class:`numpy.ndarray` objects representing the codewords.
+        """
+        if self.G is None:
+            raise ValueError("Generator matrix required to list codewords")
+
         def add_cw(i):
-            if i == self.k-1: return [np.zeros(self.n), self.G[i]]
-            ret = add_cw(i+1)
-            return ret + [(self.G[i]+c)%2 for c in ret]
+            if i == self.k - 1:
+                return [np.zeros(self.n), self.G[i]]
+            ret = add_cw(i + 1)
+            return ret + [(self.G[i] + c) % 2 for c in ret]
+
         return add_cw(0)
 
     def get_factor_graph(self):

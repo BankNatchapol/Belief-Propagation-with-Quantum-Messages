@@ -31,7 +31,7 @@ Forked from https://github.com/ChriPiv/quantum-message-passing-paper and updated
 import numpy as np
 import networkx as nx
 from matplotlib import pyplot as plt
-from decoders import LinearCode, VarNodeCloner, decode_bpqm
+from decoders import LinearCode, VarNodeCloner, decode_bpqm, decode_single_codeword
 
 # Define an 8-bit code (see Section 6 of the paper)
 G = np.array([
@@ -82,6 +82,16 @@ p_codeword = decode_bpqm(
     debug=False
 )
 print("Success probability for the full codeword:", p_codeword)
+
+# Decode a specific codeword and obtain the measurement outcome
+decoded = decode_single_codeword(
+    code,
+    theta,
+    cloner=cloner,
+    height=2,
+    codeword=[0]*code.n,
+)
+print("Decoded bits:", decoded)
 ```
 
 ## Documentation

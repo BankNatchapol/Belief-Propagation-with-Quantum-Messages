@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import networkx as nx
+from typing import List, Optional, Sequence
 
 from qiskit import QuantumCircuit, transpile
 from qiskit_aer import AerSimulator
@@ -11,7 +12,7 @@ import time
 
 from bpqm import *
 from cloner import *
-from linearcode import *
+from linearcode import LinearCode
 from cvxpy_partial_trace import *
 
 def TP(exprs):
@@ -90,6 +91,110 @@ def decode_bpqm(code, theta, cloner, height, mode, bit=None, order=None,
         prob += probs.get(key,0.0)/len(codewords)
 
     return prob
+
+
+def decode_single_codeword(
+    code: LinearCode,
+    theta: float,
+    cloner: Cloner,
+    height: int,
+    codeword: Sequence[int],
+    order: Optional[Sequence[int]] = None,
+    shots: int = 512,
+) -> List[int]:
+    """Decode the provided ``codeword`` using BPQM.
+
+    Parameters
+    ----------
+    code:
+        Linear code to decode.
+    theta:
+        Channel angle.
+    cloner:
+        Cloner instance used for loopy graphs.
+    height:
+        Unrolling depth of the BPQM tree.
+    codeword:
+        List of ``0``/``1`` describing the transmitted codeword.
+    order:
+        Optional list of bit indices to decode. Defaults to ``range(code.k)``.
+    shots:
+        Number of measurement shots for the simulation.
+
+    Returns
+    -------
+    list[int]
+        The decoded bitstring in the order specified by ``order``.
+    """
+
+    if order is None:
+        order = list(range(code.k))
+
+    cgraphs = [code.get_computation_graph(f"x{b}", height) for b in order]
+
+    n_data_qubits = max(sum(occ.values()) for _, occ, _ in cgraphs)
+    n_data_qubits = max(n_data_qubits, code.n)
+    n_total_qubits = n_data_qubits + len(order) - 1
+
+    qc_decode = QuantumCircuit(n_total_qubits)
+
+    for i, (graph, occ, root) in enumerate(cgraphs):
+        leaves = [n for n in graph.nodes() if graph.nodes[n]["type"] == "output"]
+        leaves = sorted(leaves, key=lambda s: int(s.split("_")[1]))
+        qubit_map = {f"y{j}_0": j for j in range(code.n)}
+        idx = code.n
+        for leaf in leaves:
+            if int(leaf.split("_")[1]) > 0:
+                qubit_map[leaf] = idx
+                idx += 1
+
+        cloner.mark_angles(graph, occ)
+        for leaf in leaves:
+            graph.nodes[leaf]["qubit_idx"] = qubit_map[leaf]
+
+        qc_bpqm = QuantumCircuit(n_total_qubits)
+        meas_idx, _ = tree_bpqm(graph, qc_bpqm, root=root)
+        qc_cloner = cloner.generate_cloner_circuit(graph, occ, qubit_map, n_total_qubits)
+
+        qc_decode.compose(qc_cloner, inplace=True)
+        qc_decode.barrier()
+        qc_decode.compose(qc_bpqm, inplace=True)
+        qc_decode.barrier()
+
+        if i < len(order) - 1:
+            qc_decode.h(meas_idx)
+            qc_decode.cx(meas_idx, n_data_qubits + i)
+            qc_decode.h(meas_idx)
+            qc_decode.barrier()
+            qc_decode.compose(qc_bpqm.inverse(), inplace=True)
+            qc_decode.barrier()
+            qc_decode.compose(qc_cloner.inverse(), inplace=True)
+            qc_decode.barrier()
+        else:
+            qc_decode.h(meas_idx)
+
+    decoded_qubits = list(range(n_data_qubits, n_data_qubits + len(order) - 1)) + [meas_idx]
+
+    qc = QuantumCircuit(n_total_qubits, len(order))
+    plus = np.array([np.cos(0.5 * theta), np.sin(0.5 * theta)])
+    minus = np.array([np.cos(0.5 * theta), -np.sin(0.5 * theta)])
+    for j, bit in enumerate(codeword):
+        state = plus if bit == 0 else minus
+        qc.initialize(state, [j])
+
+    qc.compose(qc_decode, inplace=True)
+
+    for idx, qb in enumerate(decoded_qubits):
+        qc.measure(qb, idx)
+
+    backend = AerSimulator()
+    qc_compiled = transpile(qc, backend)
+    job = backend.run(qc_compiled, shots=shots)
+    result = job.result().get_counts()
+
+    most_likely = max(result.items(), key=lambda kv: kv[1])[0]
+    decoded = list(map(int, most_likely[::-1]))
+    return decoded
 
 
 
