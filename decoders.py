@@ -1,11 +1,12 @@
 """High-level decoding routines for BPQM and classical benchmarks."""
 
-from typing import List, Optional, Sequence, Union
+from typing import Optional, Sequence, Union
 
 import numpy as np
 from numpy.typing import NDArray
 from qiskit import QuantumCircuit, transpile
 from qiskit_aer import AerSimulator
+from qiskit_aer.library import SaveProbabilitiesDict
 
 import cvxpy as cp
 
@@ -13,7 +14,7 @@ from bpqm import tree_bpqm
 from cloner import Cloner
 from linearcode import LinearCode
 
-def TP(exprs: Sequence[np.ndarray]) -> np.ndarray:
+def TP(exprs: Sequence[NDArray]) -> NDArray:
     """Return the Kronecker product of all matrices in ``exprs``."""
     out = exprs[0]
     for mat in exprs[1:]:
@@ -31,10 +32,14 @@ def decode_bpqm(
     only_zero_codeword: bool = True,
     debug: bool = False,
 ) -> float:
-    """Decode either a single bit or a codeword using BPQM."""
-    assert mode in ['bit','codeword']
+    """Decode either a single codeword using BPQM."""
+    assert mode in ['bit','codeword'], "mode should be 'bit' or 'codeword'."
     if mode=='bit':
+        assert bit!=None, "bit shouldn't be None when choosing mode'bit'."
         order=[bit]
+
+    if order == None:
+        order = list(range(code.n))
 
     # 1) build computation graphs
     cgraphs = [code.get_computation_graph(f"x{b}", height) for b in order]
@@ -45,6 +50,7 @@ def decode_bpqm(
     n_qubits = n_data_qubits + len(order)-1
 
     # 3) generate main circuit
+    meas_idx = 0
     qc = QuantumCircuit(n_qubits)
     for i,(graph,occ,root) in enumerate(cgraphs):
         # qubit mapping
@@ -78,7 +84,8 @@ def decode_bpqm(
 
     # snapshot as dict
     cw_qubits = list(range(n_data_qubits, n_data_qubits+len(order)-1)) + [meas_idx]
-    qc.save_probabilities_dict(label='prob', qubits=cw_qubits)
+    qc.append(SaveProbabilitiesDict(len(cw_qubits), label='prob'), cw_qubits)
+    # qc.save_probabilities_dict(label='prob', qubits=cw_qubits)
 
     # simulate
     backend = AerSimulator(method='statevector')
@@ -89,9 +96,12 @@ def decode_bpqm(
         plus  = np.array([np.cos(0.5*theta),  np.sin(0.5*theta)])
         minus = np.array([np.cos(0.5*theta), -np.sin(0.5*theta)])
         for j,v in enumerate(cw):
-            qc_init.initialize(plus if v==0 else minus, [j])
+            state = (plus if v == 0 else minus).tolist()           # ← convert here
+            qc_init.initialize(state, [j])
 
         combined = qc_init.compose(qc)
+        assert combined is not None, "Unexpected None for combined"
+
         full_qc   = transpile(combined, backend)
         result    = backend.run(full_qc).result()
 
@@ -131,7 +141,7 @@ def decode_single_codeword(
 
     Returns
     -------
-    np.ndarray
+    NDArray
         The decoded bitstring in the order specified by ``order`` as a NumPy array of ints.
     """
 
@@ -145,7 +155,7 @@ def decode_single_codeword(
     n_total_qubits = n_data_qubits + len(order) - 1
 
     qc_decode = QuantumCircuit(n_total_qubits)
-
+    meas_idx = 0
     for i, (graph, occ, root) in enumerate(cgraphs):
         leaves = [n for n in graph.nodes() if graph.nodes[n]["type"] == "output"]
         leaves = sorted(leaves, key=lambda s: int(s.split("_")[1]))
@@ -187,7 +197,7 @@ def decode_single_codeword(
     plus = np.array([np.cos(0.5 * theta), np.sin(0.5 * theta)])
     minus = np.array([np.cos(0.5 * theta), -np.sin(0.5 * theta)])
     for j, bit in enumerate(codeword):
-        state = plus if bit == 0 else minus
+        state = (plus if bit == 0 else minus).tolist()  
         qc.initialize(state, [j])
 
     qc.compose(qc_decode, inplace=True)

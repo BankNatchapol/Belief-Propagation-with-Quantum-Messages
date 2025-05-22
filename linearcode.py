@@ -78,6 +78,7 @@ class LinearCode:
             raise ValueError("Generator matrix required to enumerate codewords")
 
         def _recurse(i: int) -> List[NDArray]:
+            assert self.G, "Generator matrix required to enumerate codewords"
             if i == self.k - 1:
                 return [np.zeros(self.n, dtype=int), self.G[i]]
             prev = _recurse(i + 1)
@@ -255,7 +256,7 @@ class LinearCode:
         root: str,
         height: int,
         cloner: Optional[Any] = None
-    ) -> Tuple[nx.DiGraph, Dict[str, int], str]:
+    ) -> Tuple[nx.DiGraph, Dict[str, int], Optional[str]]:
         """
         Unroll the factor graph for message passing.
 

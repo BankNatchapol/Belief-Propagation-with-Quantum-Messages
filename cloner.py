@@ -14,8 +14,8 @@ class Cloner:
         """Annotate ``graph`` with angles for cloning."""
         raise NotImplementedError
 
-    def get_init_circ(
-        self, graph: nx.Graph, occurances: Dict[str, int], n_circ_qubits: int
+    def generate_cloner_circuit(
+        self, graph: nx.Graph, occurances: Dict[str, int], qubit_mapping: Dict[str, int], n_qubits: int,
     ) -> QuantumCircuit:
         """Return the circuit preparing the initial state."""
         raise NotImplementedError
