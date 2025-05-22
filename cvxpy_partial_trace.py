@@ -1,11 +1,14 @@
+"""Helper functions for partial tracing of CVXPY expressions."""
+
+from typing import Iterable, List
+
 import numpy as np
 import cvxpy
 from cvxpy.expressions.expression import Expression
 
-# shamelessly taken from here:
-# https://github.com/cvxpy/cvxpy/issues/563
+# Adapted from https://github.com/cvxpy/cvxpy/issues/563
 
-def expr_as_np_array(cvx_expr):
+def expr_as_np_array(cvx_expr: Expression) -> np.ndarray:
     if cvx_expr.is_scalar():
         return np.array(cvx_expr)
     elif len(cvx_expr.shape) == 1:
@@ -20,13 +23,15 @@ def expr_as_np_array(cvx_expr):
         return arr
 
 
-def np_array_as_expr(np_arr):
+def np_array_as_expr(np_arr: np.ndarray) -> Expression:
     aslist = np_arr.tolist()
     expr = cvxpy.bmat(aslist)
     return expr
 
 
-def np_partial_trace(rho, dims, axis=0):
+def np_partial_trace(
+    rho: np.ndarray, dims: Iterable[int], axis: int = 0
+) -> np.ndarray:
     """
     Takes partial trace over the subsystem defined by 'axis'
     rho: a matrix
@@ -54,7 +59,7 @@ def np_partial_trace(rho, dims, axis=0):
     return traced_out_rho.reshape([rho_dim, rho_dim])
 
 
-def partial_trace(rho, dims, axis=0):
+def partial_trace(rho: Expression | np.ndarray, dims: Iterable[int], axis: int = 0) -> Expression:
     if not isinstance(rho, Expression):
         rho = cvxpy.Constant(shape=rho.shape, value=rho)
     rho_np = expr_as_np_array(rho)
