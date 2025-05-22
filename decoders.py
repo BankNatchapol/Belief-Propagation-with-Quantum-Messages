@@ -1,24 +1,37 @@
+"""High-level decoding routines for BPQM and classical benchmarks."""
+
+from typing import List, Optional, Sequence, Union
+
 import numpy as np
 from numpy.typing import NDArray
-from typing import List, Optional, Sequence, Union
 from qiskit import QuantumCircuit, transpile
 from qiskit_aer import AerSimulator
 
 import cvxpy as cp
 
-from bpqm import *
-from cloner import *
+from bpqm import tree_bpqm
+from cloner import Cloner
 from linearcode import LinearCode
-from cvxpy_partial_trace import *
 
-def TP(exprs):
+def TP(exprs: Sequence[np.ndarray]) -> np.ndarray:
+    """Return the Kronecker product of all matrices in ``exprs``."""
     out = exprs[0]
     for mat in exprs[1:]:
         out = np.kron(out, mat)
     return out
 
-def decode_bpqm(code, theta, cloner, height, mode, bit=None, order=None,
-                    only_zero_codeword=True, debug=False):
+def decode_bpqm(
+    code: LinearCode,
+    theta: float,
+    cloner: Cloner,
+    height: int,
+    mode: str,
+    bit: Optional[int] = None,
+    order: Optional[Sequence[int]] = None,
+    only_zero_codeword: bool = True,
+    debug: bool = False,
+) -> float:
+    """Decode either a single bit or a codeword using BPQM."""
     assert mode in ['bit','codeword']
     if mode=='bit':
         order=[bit]
@@ -191,7 +204,7 @@ def decode_single_codeword(
     decoded = [int(bit) for bit in most_likely[::-1]]
     return np.array(decoded, dtype=int)
 
-def decode_bit_optimal_quantum(code, theta, index):
+def decode_bit_optimal_quantum(code: LinearCode, theta: float, index: int) -> float:
     rho0 = np.zeros((2**code.n, 2**code.n), complex)
     rho1 = np.zeros((2**code.n, 2**code.n), complex)
     vecs = [
@@ -211,7 +224,7 @@ def decode_bit_optimal_quantum(code, theta, index):
     return 0.5 + 0.25 * np.sum(np.abs(eigs))
 
 
-def decode_codeword_PGM(code, theta):
+def decode_codeword_PGM(code: LinearCode, theta: float) -> float:
     vecs = [
         np.array([[np.cos(0.5 * theta)], [np.sin(0.5 * theta)]]),
         np.array([[np.cos(0.5 * theta)], [-np.sin(0.5 * theta)]])
@@ -231,7 +244,7 @@ def decode_codeword_PGM(code, theta):
     ) / len(codewords)
 
 
-def decode_codeword_optimal_quantum(code, theta):
+def decode_codeword_optimal_quantum(code: LinearCode, theta: float) -> float:
     sigma = cp.Variable((2**code.n, 2**code.n), PSD=True)
     codewords = code.get_codewords()
     vecs = [
@@ -248,7 +261,7 @@ def decode_codeword_optimal_quantum(code, theta):
     return float(prob)
 
 
-def decode_bit_optimal_classical(code, theta, index):
+def decode_bit_optimal_classical(code: LinearCode, theta: float, index: int) -> float:
     if theta < 1e-8:
         return 0.5
     p_r = 0.5 * (1 + np.sin(theta))
@@ -268,7 +281,7 @@ def decode_bit_optimal_classical(code, theta, index):
     return success
 
 
-def decode_codeword_optimal_classical(code, theta):
+def decode_codeword_optimal_classical(code: LinearCode, theta: float) -> float:
     if theta < 1e-8:
         return 1.0 / (2**code.k)
     p_r = 0.5 * (1 + np.sin(theta))

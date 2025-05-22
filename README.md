@@ -105,7 +105,7 @@ print("Decoded bits:", decoded)
 
   * Defines approximate cloners for variable nodes in loopy graphs.
   * `VarNodeCloner` corresponds to the ENU cloner described in the paper.
-
-
-
-https://graphviz.org/download/
+* **`linearcode.py`**
+  * Provides the `LinearCode` class for enumerating codewords and building factor graphs.
+    For interactive graph visualizations you may need Graphviz
+    (<https://graphviz.org/download/>).

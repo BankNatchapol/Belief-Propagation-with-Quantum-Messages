@@ -1,7 +1,8 @@
+"""Utilities for binary linear block codes and their factor graphs."""
 import re
 import numpy as np
 import networkx as nx
-from typing import Optional, Tuple, Dict, List
+from typing import Any, Dict, List, Optional, Tuple
 from numpy.typing import NDArray
 
 __all__ = ["LinearCode"]
@@ -59,7 +60,7 @@ class LinearCode:
             self.G = None
             self.k = self.n - self.H.shape[0]
 
-    def get_codewords(self) -> List[NDArray]:
+    def get_codewords(self) -> List[NDArray[np.int_]]:
         """
         Enumerate all codewords by recursively combining rows of G.
 
@@ -253,20 +254,25 @@ class LinearCode:
         self,
         root: str,
         height: int,
-        cloner: Optional[object] = None
+        cloner: Optional[Any] = None
     ) -> Tuple[nx.DiGraph, Dict[str, int], str]:
         """
-        Unroll the factor graph around a root variable for message-passing.
+        Unroll the factor graph for message passing.
 
-        Args:
-            root (str): Name of the variable node to serve as root (e.g., 'x0').
-            height (int): Number of layers to expand (depth).
-            cloner (Optional): Reserved for future cloning logic.
+        Parameters
+        ----------
+        root : str
+            Name of the variable node to serve as root (e.g., `"x0"`).
+        height : int
+            Number of layers to expand on each side of the root.
+        cloner : Optional[Any]
+            Reserved for future cloning logic.
 
-        Returns:
-            DiGraph: Directed computation graph.
-            Dict[str,int]: Occurrence count of each variable in the unrolled graph.
-            str: New root node name in the unrolled graph.
+        Returns
+        -------
+        Tuple[nx.DiGraph, Dict[str, int], str]
+            The unrolled computation graph, a dictionary with variable occurrence counts,
+            and the new root node label.
         """
         fg = self.get_factor_graph()
         directed = nx.DiGraph()
